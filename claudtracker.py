@@ -16,6 +16,13 @@ from pathlib import Path
 from collections import defaultdict
 
 import httpx
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.layout import Layout
+from rich.text import Text
+from rich import box
+from rich.columns import Columns
 
 # Charger le fichier .env s'il existe
 def load_dotenv():
@@ -308,7 +315,7 @@ class ClaudePlatformTracker:
         self.api_key = api_key
         self.history = history
 
-    def test_api(self, prompt: str = "Réponds 'ok' en un mot.") -> dict:
+    def test_api(self, prompt: str = "Reply 'ok' in one word.") -> dict:
         """Teste l'API et enregistre l'usage"""
         if not self.api_key:
             return {"error": "API key non configurée"}
@@ -358,6 +365,9 @@ class ClaudePlatformTracker:
             return {"error": str(e)}
 
 
+console = Console()
+
+
 def format_number(n: int) -> str:
     """Formate un nombre avec séparateurs de milliers"""
     return f"{n:,}".replace(",", " ")
@@ -368,86 +378,100 @@ def format_cost(c: float) -> str:
     return f"${c:.4f}" if c < 1 else f"${c:.2f}"
 
 
-def print_separator(char: str = "─", length: int = 60):
-    print(char * length)
-
-
-def print_header(title: str):
-    print()
-    print_separator("═")
-    print(f"  {title}")
-    print_separator("═")
+def create_kpi_panel(title: str, value: str, subtitle: str = "", color: str = "cyan") -> Panel:
+    """Crée un panel KPI stylisé"""
+    content = Text()
+    content.append(f"{value}\n", style=f"bold {color}")
+    if subtitle:
+        content.append(subtitle, style="dim")
+    return Panel(content, title=f"[bold]{title}[/bold]", border_style=color, padding=(0, 1))
 
 
 def main():
-    print_header("CLAUDE USAGE TRACKER v2.0")
-    print(f"  Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    console.clear()
+
+    # Header
+    header = Text()
+    header.append("  CLAUDE USAGE TRACKER  ", style="bold white on blue")
+    header.append(f"  v2.0  ", style="bold black on cyan")
+    console.print(Panel(header, subtitle=datetime.now().strftime("%Y-%m-%d %H:%M"), box=box.DOUBLE))
+    console.print()
 
     history = UsageHistory()
-
-    # ══════════════════════════════════════════════════════════════
-    # SECTION 1: Claude Code (Usage local via JSONL)
-    # ══════════════════════════════════════════════════════════════
-    print_header("CLAUDE CODE - USAGE LOCAL")
-
     tracker = ClaudeCodeUsageTracker()
     sessions = tracker.get_all_sessions_stats()
     agg = tracker.get_aggregated_stats(sessions)
 
     if agg["total_sessions"] == 0:
-        print("  Aucune session Claude Code trouvée.")
+        console.print(Panel("[yellow]Aucune session Claude Code trouvée.[/yellow]", title="Claude Code"))
     else:
-        print(f"\n  Sessions totales     : {agg['total_sessions']}")
-        print(f"  Projets              : {len(agg['projects'])}")
-        print(f"  Messages envoyés     : {format_number(agg['total_messages'])}")
-        print(f"  Appels d'outils      : {format_number(agg['total_tool_calls'])}")
-
-        print(f"\n  TOKENS:")
-        print(f"    Input              : {format_number(agg['total_input_tokens'])}")
-        print(f"    Output             : {format_number(agg['total_output_tokens'])}")
-        print(f"    Cache lecture      : {format_number(agg['total_cache_read_tokens'])}")
-        print(f"    Cache écriture     : {format_number(agg['total_cache_write_tokens'])}")
-        print(f"    ─────────────────────────────────")
         total_all = agg['total_input_tokens'] + agg['total_output_tokens'] + \
                     agg['total_cache_read_tokens'] + agg['total_cache_write_tokens']
-        print(f"    TOTAL              : {format_number(total_all)}")
-
-        # Coût équivalent API
         cost = tracker.calculate_equivalent_cost(agg, "claude-sonnet-4-20250514")
-        print(f"\n  COÛT ÉQUIVALENT API (Sonnet):")
-        print(f"    Input              : {format_cost(cost['input_cost'])}")
-        print(f"    Output             : {format_cost(cost['output_cost'])}")
-        print(f"    Cache lecture      : {format_cost(cost['cache_read_cost'])}")
-        print(f"    Cache écriture     : {format_cost(cost['cache_write_cost'])}")
-        print(f"    ─────────────────────────────────")
-        print(f"    TOTAL              : {format_cost(cost['total_cost'])}")
 
-        # Modèles utilisés
-        if agg["models_used"]:
-            print(f"\n  Modèles utilisés:")
-            for m in agg["models_used"]:
-                print(f"    • {m}")
+        # KPI Row 1 - Tuiles principales
+        kpis_row1 = [
+            create_kpi_panel("Sessions", str(agg['total_sessions']), f"{len(agg['projects'])} projets", "cyan"),
+            create_kpi_panel("Messages", format_number(agg['total_messages']), "envoyés", "green"),
+            create_kpi_panel("Tool Calls", format_number(agg['total_tool_calls']), "appels d'outils", "yellow"),
+            create_kpi_panel("Coût API", format_cost(cost['total_cost']), "équivalent Sonnet", "magenta"),
+        ]
+        console.print(Columns(kpis_row1, equal=True, expand=True))
+        console.print()
 
-        # Stats par jour (7 derniers jours)
-        daily = tracker.get_daily_stats(sessions, days=7)
-        if daily:
-            print(f"\n  USAGE 7 DERNIERS JOURS:")
-            print(f"    {'Date':<12} {'Tokens':>12} {'Messages':>10} {'Sessions':>10}")
-            print(f"    {'-'*12} {'-'*12} {'-'*10} {'-'*10}")
-            for day, data in daily.items():
-                print(f"    {day:<12} {format_number(data['tokens']):>12} {data['messages']:>10} {data['sessions']:>10}")
+        # Tokens Panel
+        tokens_table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan")
+        tokens_table.add_column("Type", style="bold")
+        tokens_table.add_column("Tokens", justify="right", style="green")
+        tokens_table.add_column("Coût API", justify="right", style="yellow")
 
-        # Top projets
+        tokens_table.add_row("Input", format_number(agg['total_input_tokens']), format_cost(cost['input_cost']))
+        tokens_table.add_row("Output", format_number(agg['total_output_tokens']), format_cost(cost['output_cost']))
+        tokens_table.add_row("Cache Read", format_number(agg['total_cache_read_tokens']), format_cost(cost['cache_read_cost']))
+        tokens_table.add_row("Cache Write", format_number(agg['total_cache_write_tokens']), format_cost(cost['cache_write_cost']))
+        tokens_table.add_row("[bold]TOTAL[/bold]", f"[bold]{format_number(total_all)}[/bold]", f"[bold]{format_cost(cost['total_cost'])}[/bold]")
+
+        # Top Projets Panel
         project_stats = defaultdict(lambda: {"tokens": 0, "messages": 0})
         for s in sessions:
             project_stats[s["project"]]["tokens"] += s["input_tokens"] + s["output_tokens"]
             project_stats[s["project"]]["messages"] += s["messages_count"]
-
         sorted_projects = sorted(project_stats.items(), key=lambda x: x[1]["tokens"], reverse=True)[:5]
-        if sorted_projects:
-            print(f"\n  TOP 5 PROJETS (par tokens):")
-            for proj, data in sorted_projects:
-                print(f"    • {proj:<20} {format_number(data['tokens']):>12} tokens")
+
+        projects_table = Table(box=box.ROUNDED, show_header=True, header_style="bold magenta")
+        projects_table.add_column("Projet", style="bold")
+        projects_table.add_column("Tokens", justify="right", style="cyan")
+        projects_table.add_column("Messages", justify="right", style="green")
+
+        for proj, data in sorted_projects:
+            projects_table.add_row(proj[:20], format_number(data['tokens']), str(data['messages']))
+
+        console.print(Columns([
+            Panel(tokens_table, title="[bold cyan]Tokens & Coûts[/bold cyan]", border_style="cyan"),
+            Panel(projects_table, title="[bold magenta]Top 5 Projets[/bold magenta]", border_style="magenta")
+        ], equal=True, expand=True))
+        console.print()
+
+        # Usage 7 derniers jours
+        daily = tracker.get_daily_stats(sessions, days=7)
+        if daily:
+            daily_table = Table(box=box.SIMPLE, show_header=True, header_style="bold blue")
+            daily_table.add_column("Date", style="dim")
+            daily_table.add_column("Tokens", justify="right", style="cyan")
+            daily_table.add_column("Messages", justify="right", style="green")
+            daily_table.add_column("Sessions", justify="right", style="yellow")
+
+            for day, data in daily.items():
+                daily_table.add_row(day, format_number(data['tokens']), str(data['messages']), str(data['sessions']))
+
+            console.print(Panel(daily_table, title="[bold blue]7 Derniers Jours[/bold blue]", border_style="blue"))
+            console.print()
+
+        # Modèles utilisés
+        if agg["models_used"]:
+            models_text = " | ".join([f"[cyan]{m}[/cyan]" for m in agg["models_used"]])
+            console.print(Panel(models_text, title="[bold]Modèles Utilisés[/bold]", border_style="dim"))
+            console.print()
 
         # Sauvegarder snapshot
         history.add_snapshot({
@@ -456,85 +480,65 @@ def main():
             "total_sessions": agg["total_sessions"]
         })
 
-    # ══════════════════════════════════════════════════════════════
-    # SECTION 2: API Platform
-    # ══════════════════════════════════════════════════════════════
-    print_header("CLAUDE API - PLATFORM")
-
+    # API Platform
     platform = ClaudePlatformTracker(ANTHROPIC_API_KEY, history)
 
     if not ANTHROPIC_API_KEY:
-        print("  ⚠️  ANTHROPIC_API_KEY non configurée")
-        print("\n  Pour configurer:")
-        print("    1. Éditez le fichier .env")
-        print("    2. Ajoutez: ANTHROPIC_API_KEY=sk-ant-...")
+        api_content = "[yellow]API Key non configurée[/yellow]\n\nPour configurer:\n1. Éditez [cyan].env[/cyan]\n2. Ajoutez: [dim]ANTHROPIC_API_KEY=sk-ant-...[/dim]"
     else:
-        print("  ✓ API Key configurée")
-
-        # Test de l'API
-        print("\n  Test de connexion...")
         result = platform.test_api()
-
         if "error" in result:
-            print(f"  ✗ Erreur: {result['error']}")
+            api_content = f"[green]API Key configurée[/green]\n[red]Erreur: {result['error']}[/red]"
         else:
-            print(f"  ✓ Connexion réussie ({result['model']})")
+            api_totals = history.get_api_totals()
+            api_content = f"[green]Connexion OK[/green] ({result['model']})\n\n"
+            api_content += f"Appels: [cyan]{api_totals['calls']}[/cyan] | "
+            api_content += f"Tokens: [cyan]{format_number(api_totals['tokens_in'] + api_totals['tokens_out'])}[/cyan] | "
+            api_content += f"Coût: [yellow]{format_cost(api_totals['cost'])}[/yellow]"
 
-        # Historique des appels API
-        api_totals = history.get_api_totals()
-        if api_totals["calls"] > 0:
-            print(f"\n  HISTORIQUE API (cette installation):")
-            print(f"    Appels totaux      : {api_totals['calls']}")
-            print(f"    Tokens IN          : {format_number(api_totals['tokens_in'])}")
-            print(f"    Tokens OUT         : {format_number(api_totals['tokens_out'])}")
-            print(f"    Coût total         : {format_cost(api_totals['cost'])}")
-
-    # ══════════════════════════════════════════════════════════════
-    # SECTION 3: Plan Claude AI
-    # ══════════════════════════════════════════════════════════════
-    print_header("ABONNEMENT CLAUDE AI")
-
+    # Plan Claude AI
     plan = os.getenv("CLAUDE_PLAN", "max").lower()
     plans_info = {
-        "free": ("Free", "$0/mois", "Limité"),
-        "pro": ("Pro", "$20/mois", "5x plus que Free"),
-        "max": ("Max $100", "$100/mois", "5x plus que Pro"),
-        "max200": ("Max $200", "$200/mois", "20x plus que Pro, illimité")
+        "free": ("Free", "$0/mois", "Limité", "dim"),
+        "pro": ("Pro", "$20/mois", "5x Free", "green"),
+        "max": ("Max 5x", "$100/mois", "5x Pro", "cyan"),
+        "max200": ("Max 20x", "$200/mois", "20x Pro", "magenta")
     }
-
     info = plans_info.get(plan, plans_info["max"])
-    print(f"\n  Plan actuel          : {info[0]}")
-    print(f"  Prix                 : {info[1]}")
-    print(f"  Limite messages      : {info[2]}")
+
+    plan_content = f"[bold {info[3]}]{info[0]}[/bold {info[3]}]\n"
+    plan_content += f"[{info[3]}]{info[1]}[/{info[3]}] - {info[2]}"
 
     if agg["total_sessions"] > 0 and cost["total_cost"] > 0:
-        plan_price = 100 if "max" in plan else (20 if plan == "pro" else 0)
+        plan_price = 200 if plan == "max200" else (100 if "max" in plan else (20 if plan == "pro" else 0))
         if plan_price > 0:
             savings = cost["total_cost"] - plan_price
             if savings > 0:
-                print(f"\n  💰 ÉCONOMIES vs API   : {format_cost(savings)}")
-                print(f"     (Coût API {format_cost(cost['total_cost'])} - Abo {format_cost(float(plan_price))})")
+                plan_content += f"\n\n[bold green]Économies: {format_cost(savings)}[/bold green]"
 
-    print("\n  ℹ️  Pour voir l'usage exact du plan:")
-    print("     → claude.ai → Paramètres → Usage")
-    print("     → Ou utilisez /context dans Claude Code")
+    console.print(Columns([
+        Panel(api_content, title="[bold yellow]API Platform[/bold yellow]", border_style="yellow"),
+        Panel(plan_content, title="[bold green]Abonnement[/bold green]", border_style="green")
+    ], equal=True, expand=True))
+    console.print()
 
-    # ══════════════════════════════════════════════════════════════
-    # SECTION 4: Tarifs de référence
-    # ══════════════════════════════════════════════════════════════
-    print_header("TARIFS API - RÉFÉRENCE 2026")
+    # Tarifs de référence
+    pricing_table = Table(box=box.ROUNDED, show_header=True, header_style="bold")
+    pricing_table.add_column("Modèle", style="cyan")
+    pricing_table.add_column("Input/1M", justify="right", style="green")
+    pricing_table.add_column("Output/1M", justify="right", style="yellow")
+    pricing_table.add_column("Cache R/1M", justify="right", style="dim")
 
-    print("\n  Modèle                    Input/1M    Output/1M   Cache R/1M")
-    print("  " + "-" * 56)
     for model, prices in PRICING.items():
         if model != "default":
             name = model.replace("claude-", "").replace("-20251101", "").replace("-20250514", "")
-            print(f"  {name:<25} ${prices['input']:<9.2f} ${prices['output']:<10.2f} ${prices['cache_read']:.2f}")
+            pricing_table.add_row(name, f"${prices['input']:.2f}", f"${prices['output']:.2f}", f"${prices['cache_read']:.2f}")
 
-    print()
-    print_separator("═")
-    print(f"\n  Historique sauvegardé: {HISTORY_FILE}")
-    print()
+    console.print(Panel(pricing_table, title="[bold]Tarifs API - Février 2026[/bold]", border_style="dim"))
+    console.print()
+
+    console.print(f"[dim]Historique sauvegardé: {HISTORY_FILE}[/dim]")
+    console.print()
 
 
 if __name__ == "__main__":
