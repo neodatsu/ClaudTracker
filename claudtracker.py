@@ -36,13 +36,13 @@ ANTHROPIC_ADMIN_KEY = os.getenv("ANTHROPIC_ADMIN_KEY", "")
 CLAUDE_DIR = Path.home() / ".claude"
 HISTORY_FILE = Path(__file__).parent / "usage_history.json"
 
-# Tarifs API (par million de tokens) - Janvier 2026
+# Tarifs API (par million de tokens) - Février 2026
+# Cache: read = 0.1x input, write 5min = 1.25x input, write 1h = 2x input
 PRICING = {
-    "claude-opus-4-5-20251101": {"input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_write": 18.75},
+    "claude-opus-4-5-20251101": {"input": 5.00, "output": 25.00, "cache_read": 0.50, "cache_write": 6.25},
     "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.75},
-    "claude-3-5-sonnet": {"input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.75},
-    "claude-3-5-haiku": {"input": 0.80, "output": 4.00, "cache_read": 0.08, "cache_write": 1.00},
-    "claude-3-opus": {"input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_write": 18.75},
+    "claude-haiku-4-5": {"input": 1.00, "output": 5.00, "cache_read": 0.10, "cache_write": 1.25},
+    "claude-opus-4-1": {"input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_write": 18.75},
     "default": {"input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.75}
 }
 
