@@ -1,0 +1,46 @@
+# Fichiers d'environnement (contiennent des clés API sensibles)
+.env
+.env.local
+.env.*.local
+
+# Données d'utilisation personnelles
+usage_history.json
+
+# Environnement virtuel Python
+venv/
+.venv/
+env/
+ENV/
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# IDE et éditeurs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Claude Code local settings
+.claude/
+
+# Logs
+*.log
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
